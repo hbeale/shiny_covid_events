@@ -4,6 +4,8 @@ library(tidyverse)
 library(scales)
 library(tidyquant)
 library(lubridate)
+library(TTR)
+library(rlang) # as_string
 
 # Load data
 
@@ -36,15 +38,13 @@ ui <- fluidPage(
   
   sidebarPanel(
     
-    sliderInput('start_date', 'Start date', min=min(covid_events_by_county$date), max=max(covid_events_by_county$date),
-                value=as.Date("2020-03-01")),
+    sliderInput('start_date', 'Start date', min=min(covid_events_by_county$date), max=max(covid_events_by_county$date), value=as.Date("2020-03-01")),
     
     # selectInput('x', 'X', names(dataset)),
-    selectInput('y', 'Y', c("cases", "deaths")),
+    selectInput('y', 'Y axis - select cases or deaths', c("cases", "deaths")),  
     selectInput('moving_average_1', 'Moving average 1 (in days; red)', 1:30, selected = 5),
     selectInput('moving_average_2', 'Moving average 2 (in days; pink)', 1:30, selected = 3),
     selectInput('counties_of_interest', 'Counties (click and type to add)', counties, selected = initial_counties_of_interest$county_label, multiple = TRUE),
-
     checkboxInput('f_log_transform_y', 'Use logarithmic Y axis?', value = TRUE),
   ),
   
@@ -60,41 +60,51 @@ ui <- fluidPage(
 # Define server function
 server <- function(input, output) {
   
-  
-  dataset <- reactive({
-    covid_events_with_change
-  })
-  
   output$plot <- renderPlot({
     
+    variable_for_x =  "date"   
+    if(input$y == "cases") variable_for_y = "change_in_cases"    
+    if(input$y == "deaths") variable_for_y = "change_in_deaths"    
+    
     county_data_to_plot <- covid_events_with_change %>%
+      ungroup %>%
+      mutate(y_value = county_data_to_plot %>% pull(variable_for_y)) %>%
       filter(county_label %in% input$counties_of_interest) %>%
-      filter(date > input$start_date)
+      filter(date > input$start_date)  %>%
+      group_by(county) %>%
+      arrange(date) %>%
+      mutate(ma_1 = TTR::SMA(y_value, n=as.numeric(input$moving_average_1)),
+             ma_2 = TTR::SMA(y_value, n=as.numeric(input$moving_average_2)))
     
     # plot_title
     plot_title <- paste0("COVID-19 ", input$y, " from ", input$start_date, 
                          " to ", max(county_data_to_plot$date))
     
-    variable_for_x =  "date"    
+ 
     
     p <- county_data_to_plot %>%
-      ggplot(aes_string(x=variable_for_x, y=input$y)) +
+#      ggplot(aes_string(x=variable_for_x, y=input$y)) +
+      ggplot(aes(date, y_value)) +
       geom_point() +
       facet_wrap(~county_label, scales="free_y") +
-      expand_limits(y=0) +
       geom_ma(ma_fun = SMA, n = as.numeric(input$moving_average_1), color = "red") +
       geom_ma(ma_fun = SMA, n = as.numeric(input$moving_average_2), color = "pink") +
-      scale_y_continuous(label=comma) +
       theme_grey(base_size=16) +
+      expand_limits(y=0) +
       scale_x_date(date_labels = "%m/%d") +
-      ggtitle(plot_title) +
-      ylab(paste(input$y, "per day"))
-      
-    if (input$f_log_transform_y) 
-      p <- p + scale_y_log10() +
-      ylab(paste(input$y, "per day (log10)"))
-
-        print(p)
+      ggtitle(plot_title) 
+    
+    if (input$f_log_transform_y) {
+      p <- p + 
+        scale_y_log10(paste(input$y, "per day (log10)"), 
+                      label=comma) 
+    } else {
+      p <- p + 
+        scale_y_continuous(paste(input$y, "per day"), 
+                           label=comma)
+    }
+    
+    print(p)
     
   }, height=700)
   
