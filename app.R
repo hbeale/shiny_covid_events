@@ -29,7 +29,10 @@ initial_counties_of_interest <- tibble(county_label = c("Santa Cruz, CA",
                                                 "Marin, CA",
                                                 "Montgomery, MD",
                                                 "Nantucket, MA",
-                                                "New York City, NY"))
+                                                "New York City, NY",
+                                                "Clear Creek, CO",
+                                                "Montrose, CO"
+                                                ))
 
 # Define UI
 
@@ -40,13 +43,14 @@ ui <- fluidPage(
   sidebarPanel(
     
     sliderInput('start_date', 'Start date', min=min(covid_events_by_county$date), max=max(covid_events_by_county$date), value=as.Date("2020-03-01")),
-    
+    sliderInput('end_date', 'End date', min=min(covid_events_by_county$date), max=max(covid_events_by_county$date), value=max(covid_events_with_change$date)),
     # selectInput('x', 'X', names(dataset)),
     selectInput('y', 'Y axis - select cases or deaths', c("cases", "deaths")),  
     selectInput('moving_average_1', 'Moving average 1 (in days; red)', 1:30, selected = 5),
     selectInput('moving_average_2', 'Moving average 2 (in days; pink)', 1:30, selected = 3),
     selectInput('counties_of_interest', 'Counties (click and type to add)', counties, selected = initial_counties_of_interest$county_label, multiple = TRUE),
     checkboxInput('f_log_transform_y', 'Use logarithmic Y axis?', value = FALSE),
+    checkboxInput('f_consistent_y_axes', 'Use consistent Y axes across counties?', value = FALSE),
     checkboxInput('show_inferred_case_prevalance', 'Show inferred case prevalance?', value = FALSE),
     conditionalPanel(
       condition = "input.show_inferred_case_prevalance",
@@ -84,7 +88,7 @@ server <- function(input, output) {
     county_data_to_plot <- covid_events_with_change %>%
       mutate(y_value = covid_events_with_change %>% pull(variable_for_y)) %>%
       filter(county_label %in% input$counties_of_interest) %>%
-      filter(date > input$start_date)  %>%
+      filter(date > input$start_date & date < input$end_date)  %>%
       group_by(county) %>%
       arrange(date) %>%
       mutate(ma_1 = TTR::SMA(y_value, n=as.numeric(input$moving_average_1)),
@@ -100,7 +104,6 @@ server <- function(input, output) {
 #      ggplot(aes_string(x=variable_for_x, y=input$y)) +
       ggplot(aes(date, y_value)) +
       geom_point() +
-      facet_wrap(~county_label, scales="free_y") +
       geom_ma(ma_fun = SMA, n = as.numeric(input$moving_average_1), color = "red") +
       geom_ma(ma_fun = SMA, n = as.numeric(input$moving_average_2), color = "pink") +
       theme_grey(base_size=16) +
@@ -121,6 +124,12 @@ server <- function(input, output) {
       p <- p + 
         scale_y_continuous(paste("New", input$y, "per day"), 
                            label=comma)
+    }
+    
+    if (input$f_consistent_y_axes) { 
+      p <- p + facet_wrap(~county_label) 
+    } else {
+      p <- p + facet_wrap(~county_label, scales="free_y")
     }
     
     print(p)
