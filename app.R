@@ -60,7 +60,7 @@ ui <- fluidPage(
 
     mainPanel(
     p("This plot shows the change per day in COVID-19 cases and deaths. The", 
-    a("underlying code", href="https://github.com/hbeale/shiny_nyt_covid_rates_domestic"),
+    a("underlying code", href="https://github.com/hbeale/shiny_nyt_covid_rates_US_counties"),
     "gathers",
     a("data", href="https://github.com/nytimes/covid-19-data"),
     "collected by the ",
