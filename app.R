@@ -46,8 +46,7 @@ ui <- fluidPage(
     sliderInput('end_date', 'End date', min=min(covid_events_by_county$date), max=max(covid_events_by_county$date), value=max(covid_events_with_change$date)),
     # selectInput('x', 'X', names(dataset)),
     selectInput('y', 'Y axis - select cases or deaths', c("cases", "deaths")),  
-    selectInput('moving_average_1', 'Moving average 1 (in days; red)', 1:30, selected = 5),
-    selectInput('moving_average_2', 'Moving average 2 (in days; pink)', 1:30, selected = 3),
+    selectInput('moving_average_1', 'Moving average 1 (in days)', 1:60, selected = 15),
     selectInput('counties_of_interest', 'Counties (click and type to add)', counties, selected = initial_counties_of_interest$county_label, multiple = TRUE),
     checkboxInput('f_log_transform_y', 'Use logarithmic Y axis?', value = FALSE),
     checkboxInput('f_consistent_y_axes', 'Use consistent Y axes across counties?', value = FALSE),
@@ -91,8 +90,8 @@ server <- function(input, output) {
       filter(date > input$start_date & date < input$end_date)  %>%
       group_by(county) %>%
       arrange(date) %>%
-      mutate(ma_1 = TTR::SMA(y_value, n=as.numeric(input$moving_average_1)),
-             ma_2 = TTR::SMA(y_value, n=as.numeric(input$moving_average_2))) %>%
+      mutate(ma_1 = TTR::SMA(y_value, n=as.numeric(input$moving_average_1))
+             ) %>%
       mutate(predicted_case_rate_from_deaths = lead(new_deaths, input$death_lag)/input$overall_deaths_per_case)
     
     # plot_title
@@ -103,9 +102,9 @@ server <- function(input, output) {
     p <- county_data_to_plot %>%
 #      ggplot(aes_string(x=variable_for_x, y=input$y)) +
       ggplot(aes(date, y_value)) +
-      geom_point() +
-      geom_ma(ma_fun = SMA, n = as.numeric(input$moving_average_1), color = "red") +
-      geom_ma(ma_fun = SMA, n = as.numeric(input$moving_average_2), color = "pink") +
+      geom_point(alpha=0.5) +
+      geom_ma(ma_fun = SMA, n = as.numeric(input$moving_average_1), 
+              color = "red", size = 2, linetype = 1, alpha = 0.5) +
       theme_grey(base_size=16) +
       expand_limits(y=0) +
       scale_x_date(date_labels = "%m/%d") +
