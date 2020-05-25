@@ -5,6 +5,6 @@ account: holly-beale
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 2022134
-bundleId: 3186067
+bundleId: 3188617
 url: https://holly-beale.shinyapps.io/shiny_covid_rates/
-when: 1590378134.60447
+when: 1590437990.2314

@@ -7,8 +7,34 @@ library(lubridate)
 library(TTR)
 library(rlang) # as_string
 
-# Load data
+# setwd("/Users/hbeale/Documents/Dropbox/ucsc/projects/tracking COViD19/global/")
 
+# Global data ----
+covid_events_by_subregion_and_country <- read_csv("https://raw.githubusercontent.com/datasets/covid-19/master/data/time-series-19-covid-combined.csv")
+
+covid_events_by_country <- 
+  covid_events_by_subregion_and_country %>%
+  rename(Country = `Country/Region`,
+         Subregion = `Province/State`,
+         date = Date) %>%
+  group_by(Country, date) %>%
+  summarize(cases = sum(Confirmed, na.rm = TRUE),
+            deaths = sum(Deaths, na.rm = TRUE))
+  
+covid_country_events_with_change <- covid_events_by_country %>% 
+  group_by(Country) %>%
+  arrange(date) %>%
+  mutate(new_cases = ifelse(cases<lag(cases), 0, cases - lag(cases)),
+         new_deaths = ifelse(deaths<lag(deaths), 0, deaths - lag (deaths))) %>%
+  ungroup %>%
+  na.omit
+
+countries_in_data <- sort(unique(covid_country_events_with_change$Country))
+
+initial_countries_of_interest <- c("US", "Germany", "Brazil", "New Zealand")
+
+
+# US County data ----
 covid_events_by_county <- read_csv("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv")
 
 covid_county_events_with_change <- covid_events_by_county %>% 
@@ -19,7 +45,24 @@ covid_county_events_with_change <- covid_events_by_county %>%
   arrange(date) %>%
   mutate(new_cases = ifelse(cases<lag(cases), 0, cases - lag(cases)),
          new_deaths = ifelse(deaths<lag(deaths), 0, deaths - lag (deaths))) %>%
-  ungroup
+  ungroup %>%
+  na.omit
+
+counties_in_data <- sort(unique(covid_county_events_with_change$county_label))
+
+initial_counties_of_interest <- tibble(county_label = c("Santa Cruz, CA",
+                                                        "San Francisco, CA",
+                                                        "Santa Clara, CA",
+                                                        "Los Angeles, CA",
+                                                        "Marin, CA",
+                                                        "Montgomery, MD",
+                                                        "Nantucket, MA",
+                                                        "New York City, NY",
+                                                        "Clear Creek, CO",
+                                                        "Montrose, CO"
+))
+
+# US State data ----
 
 covid_state_events_with_change <- covid_events_by_county %>% 
   group_by(state, date) %>%
@@ -29,30 +72,21 @@ covid_state_events_with_change <- covid_events_by_county %>%
   arrange(date) %>%
   mutate(new_cases = ifelse(cases<lag(cases), 0, cases - lag(cases)),
          new_deaths = ifelse(deaths<lag(deaths), 0, deaths - lag (deaths))) %>%
-  ungroup
-
-counties <- sort(unique(covid_county_events_with_change$county_label))
-
-initial_counties_of_interest <- tibble(county_label = c("Santa Cruz, CA",
-                                                "San Francisco, CA",
-                                                "Santa Clara, CA",
-                                                "Los Angeles, CA",
-                                                "Marin, CA",
-                                                "Montgomery, MD",
-                                                "Nantucket, MA",
-                                                "New York City, NY",
-                                                "Clear Creek, CO",
-                                                "Montrose, CO"
-                                                ))
+  ungroup %>%
+  na.omit
 
 states_in_data <- sort(unique(covid_state_events_with_change$state))
 
 initial_states_of_interest <- c("California",
- "Maryland", "Massachusetts", "New York", "Colorado")
+                                "Maryland", "Massachusetts", "New York", "Colorado")
 
+# Define starting dataset ----
+# default_region_level <- "County"
+all_regions <- counties_in_data
+default_regions <- initial_counties_of_interest$county_label
+covid_events <- covid_county_events_with_change
 
-
-# Define UI
+# Define UI ----
 
 ui <- fluidPage(
   
@@ -60,15 +94,15 @@ ui <- fluidPage(
   
   sidebarPanel(
     
-    sliderInput('start_date', 'Start date', min=min(covid_events_by_county$date), max=max(covid_events_by_county$date), value=as.Date("2020-03-01")),
-    sliderInput('end_date', 'End date', min=min(covid_events_by_county$date), max=max(covid_events_by_county$date), value=max(covid_county_events_with_change$date)),
+    sliderInput('start_date', 'Start date', min=min(covid_events$date), max=max(covid_events$date), value=as.Date("2020-03-01")),
+    sliderInput('end_date', 'End date', min=min(covid_events$date), max=max(covid_events$date), value=max(covid_county_events_with_change$date)),
     # selectInput('x', 'X', names(dataset)),
     selectInput('y', 'Y axis - select cases or deaths', c("cases", "deaths")),  
-    selectInput('region_type', 'Region type - select counties or states', c("counties", "states"),
+    selectInput('region_type', 'Region type - select one', c("countries", "counties", "states"),
                 selected = "counties"),  
-    numericInput('moving_average_1', 'Moving average (in days)', 15, 1, 60),
+    numericInput('moving_average', 'Moving average (in days)', 15, 1, 60),
+    hr(),
     radioButtons('region_display_option', "Region selection", c("Show biggest movers*", "Show specified regions"), selected = "Show biggest movers*"),
-    
     conditionalPanel(
       condition = "input.region_display_option == 'Show biggest movers*'",
       radioButtons('by_percent_or_abs', "", c("Biggest by percent", "Biggest in absolute numbers"), selected = "Biggest in absolute numbers"),
@@ -87,7 +121,12 @@ ui <- fluidPage(
       selectInput('states_of_interest', 'States (click and type to add)', 
                   states_in_data, selected = initial_states_of_interest, multiple = TRUE)
     ),
-    
+    conditionalPanel(
+      condition = "input.region_display_option == 'Show specified regions' && input.region_type == 'countries'",
+      selectInput('countries_of_interest', 'Countries (click and type to add)', 
+                  countries_in_data, selected = initial_countries_of_interest, multiple = TRUE)
+    ),
+    hr(),
     checkboxInput('f_log_transform_y', 'Use logarithmic Y axis?', value = FALSE),
     checkboxInput('f_consistent_y_axes', 'Use consistent Y axes across counties?', value = FALSE),
     checkboxInput('show_inferred_case_prevalance', 'Show inferred case prevalance?', value = FALSE),
@@ -95,63 +134,67 @@ ui <- fluidPage(
       condition = "input.show_inferred_case_prevalance",
       numericInput('overall_deaths_per_case', 'Overall deaths per case (for inferred case prevalence; purple)', 0.01, min=0, max=1),
       numericInput('death_lag', 'Time from infection to death for fatalities (for inferred case prevalance; purple")', 17, min=0)),
-    h4("Notes about the data:"),
+    h4("*Notes about finding the biggest movers:"),
+    p("The counties with the greatest changes are identified by comparing the median values from two different weeks. For example, when viewing cases with the default setting of 14, the median number of cases in the past week is compared to the median number of cases in the 7 day span 14-21 days ago. The purple rectangles highlight the time span from which the median is calculated. The purple bar shows the median value."),
+    
+    h4("Notes about US data:"),
     p("When the information is available, the NYT investigators count patients where they are being treated, not necessarily where they live. The original data are the cumulative number of confirmed cases and deaths as reported that day in that county or state; I subtract the previous day's counts from each day to obtain the change per day. Click", 
       a("here", href = "https://github.com/nytimes/covid-19-data"), 
       "for more information and caveats about the original data."),
     br(),
-    h4("*Notes about finding the biggest movers:"),
-    p("The counties with the greatest changes are identified by comparing the median values from two different weeks. For example, when viewing cases with the default setting of 14, the median number of cases in the past week is compared to the median number of cases in the 7 day span 14-21 days ago. The purple rectangles highlight the time span from which the median is calculated. The purple bar shows the median value.")
+    h4("Notes about international data:"),
+    p("International data is from ultimately from",
+      a("the Johns Hopkins repository", href = "https://github.com/CSSEGISandData/COVID-19"), 
+      "and has been",
+      a("repackaged.", href = "https://github.com/datasets/covid-19")),
+    br()
   ),
   mainPanel(
     p("This plot shows the change per day in COVID-19 cases and deaths. The", 
       a("underlying code", href="https://github.com/hbeale/shiny_nyt_covid_rates_US_counties"),
-      "gathers",
-      a("data", href="https://github.com/nytimes/covid-19-data"),
-      "collected by the ",
-      a("New York Times.", href="https://www.nytimes.com/"),
+      "gathers USA data collected by the ",
+      a("New York Times", href="https://www.nytimes.com/"),
+      "and global data collected by",
+      a("Johns Hopkins.", href="https://systems.jhu.edu/research/public-health/ncov/"),
       "Note that the Y axis values are different for each plot."),
-    p("See explanatory notes below the plot."),
+    p("See explanatory notes and further info below the settings"),
     br(),
     plotOutput('plot')
 )
 )
 
-# Define server function
+# Define server function ----
 server <- function(input, output) {
-  
   output$plot <- renderPlot({
     
-    if(input$region_type == "counties") {
-      region_data <- covid_county_events_with_change %>%
-        rename(region = county_label) %>%
-        na.omit
-    } else {
-      region_data <- covid_state_events_with_change %>%
-        rename(region = state) %>%
-        na.omit
+    if (input$region_type == "counties") {
+      selected_regions <- input$counties_of_interest
+      covid_events <- covid_county_events_with_change %>%
+        rename(region = county_label)
+    } else if(input$region_type == "states") {
+      selected_regions <- input$states_of_interest
+      covid_events <- covid_state_events_with_change %>%
+        rename(region = state)
+    } else if(input$region_type == "countries") {
+      selected_regions <- input$countries_of_interest
+      covid_events <- covid_country_events_with_change %>%
+        rename(region = Country) 
     }
     
     variable_for_x =  "date"   
     if(input$y == "cases") variable_for_y = "new_cases"    
     if(input$y == "deaths") variable_for_y = "new_deaths"
     
-    region_data_with_y <- region_data %>%
-      mutate(y_value = region_data %>% pull(variable_for_y))
+    covid_events_with_y <- covid_events %>%
+      mutate(y_value = covid_events %>% pull(variable_for_y))
     
-    if(input$region_display_option == "Show specified regions") { 
-      if (input$region_type == "counties") {
-        selected_regions_of_interest <- input$counties_of_interest
-      } else {
-        selected_regions_of_interest <- input$states_of_interest
-      }
-    } else {
-      window_end <- max(region_data_with_y$date)
+    if(input$region_display_option != "Show specified regions") { 
+      window_end <- max(covid_events_with_y$date)
       default_window_in_days <- input$change_range
       window_start <- window_end - days(default_window_in_days)
       min_absolute_changes <- input$min_absolute_changes
       
-      window_changes <- region_data_with_y %>% 
+      window_changes <- covid_events_with_y %>% 
         mutate(in_first_window = date %in% c(window_start - days(0:6)),
                in_second_window = date %in% c(window_end - days(0:6))
         ) %>%
@@ -177,51 +220,47 @@ server <- function(input, output) {
       } else {
         selected_window_changes <- window_changes
       }
-      selected_regions_of_interest <- selected_window_changes$region
+      selected_regions <- selected_window_changes$region
     }
     
-    region_data_to_plot <- region_data_with_y %>%
-      filter(region %in% selected_regions_of_interest) %>%
+    covid_events_to_plot <- covid_events_with_y %>%
+      filter(region %in% selected_regions) %>%
       filter(date > input$start_date & date < input$end_date)  %>%
       group_by(region) %>%
       arrange(date) %>%
       mutate(predicted_case_rate_from_deaths = lead(new_deaths, input$death_lag)/input$overall_deaths_per_case)
-
+    
     # plot_title
     plot_title <- paste0("COVID-19 ", input$y, " from ", input$start_date, 
-                         " to ", max(region_data_to_plot$date))
+                         " to ", max(covid_events_to_plot$date))
     
     validate(
-      need(n_distinct(region_data_to_plot$region)>0, "No data match your criteria. Consider changing 'Minimum absolute change' or viewing data at the state level.")
+      need(n_distinct(covid_events_to_plot$region)>0, "No data match your criteria. Consider changing 'Minimum absolute change' or viewing data at the state level.")
     )
     
-    p <- region_data_to_plot %>%
-#      ggplot(aes_string(x=variable_for_x, y=input$y)) +
+    p <- covid_events_to_plot %>%
+      #      ggplot(aes_string(x=variable_for_x, y=input$y)) +
       ggplot(aes(x=date, y=y_value)) +
       geom_point(alpha=0.5) +
-      geom_ma(ma_fun = SMA, n = as.numeric(input$moving_average_1), 
+      geom_ma(ma_fun = SMA, n = as.numeric(input$moving_average), 
               color = "red", size = 2, linetype = 1, alpha = 0.5) +
       theme_grey(base_size=16) +
       expand_limits(y=0) +
       scale_x_date(date_labels = "%m/%d") +
       ggtitle(plot_title) 
-
+    
     if(input$region_display_option == "Show biggest movers*"){
       p <- p +
         geom_segment(data = selected_window_changes,
-                   aes(y=median_count_in_first_window_end, yend=median_count_in_first_window_end), 
-                   x=window_start - days(6), xend = window_start, color = "purple", size = 3, alpha = 1) +
+                     aes(y=median_count_in_first_window_end, yend=median_count_in_first_window_end), 
+                     x=window_start - days(6), xend = window_start, color = "purple", size = 3, alpha = 1) +
         geom_segment(data = selected_window_changes,
                      aes(y=median_count_in_second_window_end, yend=median_count_in_second_window_end), 
                      x=window_end - days(6), xend = window_end, color = "purple", size = 3, alpha = 1) +
-      geom_rect(ymin=-Inf, ymax=Inf, xmin=window_start - days(6), xmax = window_start, 
-                fill = NA, color = "purple", alpha = 0.2) +
+        geom_rect(ymin=-Inf, ymax=Inf, xmin=window_start - days(6), xmax = window_start, 
+                  fill = NA, color = "purple", alpha = 0.2) +
         geom_rect(ymin=-Inf, ymax=Inf, xmin=window_end - days(6), xmax = window_end, 
-                     fill = NA, color = "purple", alpha = 0.2) #+
-      #        geom_point(data = selected_window_changes,
-
-                 #                  aes(y=median_count_at_week_of_window_end), 
-                 # x=window_end - days(3), color = "purple", shape = 1, size = 3, alpha = 2)
+                  fill = NA, color = "purple", alpha = 0.2) #+
     }
     
     if(input$y == "cases" & input$show_inferred_case_prevalance) {
