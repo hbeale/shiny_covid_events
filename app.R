@@ -192,7 +192,7 @@ server <- function(input, output) {
                          " to ", max(region_data_to_plot$date))
     
     validate(
-      need(n_distinct(region_data_to_plot$region)>0, "Insufficient data to display. Adjust selected parameters. Consider changing 'Minimum absolute change' or viewing data at the state level.")
+      need(n_distinct(region_data_to_plot$region)>0, "No data match your criteria. Consider changing 'Minimum absolute change' or viewing data at the state level.")
     )
     
     p <- region_data_to_plot %>%
